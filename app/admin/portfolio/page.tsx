@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import useSWR from "swr"
 import { Plus, Trash2, ImageIcon, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -53,56 +53,60 @@ const fetcher = async (): Promise<PortfolioItem[]> => {
 export default function AdminPortfolioPage() {
   const { data: items, mutate, isLoading } = useSWR("admin-portfolio", fetcher)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const [uploading, setUploading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(formData: FormData) {
-    startTransition(async () => {
-      try {
-        const namaKegiatan = formData.get("nama_kegiatan") as string
-        const tahun = Number(formData.get("tahun"))
-        const deskripsi = (formData.get("deskripsi") as string) || null
-        const fotoFile = formData.get("foto") as File
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const form = e.currentTarget
+      const formData = new FormData(form)
+      const namaKegiatan = formData.get("nama_kegiatan") as string
+      const tahun = Number(formData.get("tahun"))
+      const deskripsi = (formData.get("deskripsi") as string) || null
+      const fotoFile = formData.get("foto") as File
 
-        if (!namaKegiatan || !tahun) {
-          toast.error("Nama kegiatan dan tahun wajib diisi")
-          return
-        }
-
-        let fotoUrl: string | null = null
-
-        if (fotoFile && fotoFile.size > 0) {
-          setUploading(true)
-          const uploadData = new FormData()
-          uploadData.append("file", fotoFile)
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            body: uploadData,
-          })
-          if (!res.ok) throw new Error("Upload foto gagal")
-          const blob = await res.json()
-          fotoUrl = blob.url
-          setUploading(false)
-        }
-
-        const supabase = createClient()
-        const { error } = await supabase.from("portfolio").insert({
-          nama_kegiatan: namaKegiatan,
-          tahun,
-          deskripsi,
-          foto_url: fotoUrl,
-        })
-
-        if (error) throw error
-
-        toast.success("Kegiatan berhasil ditambahkan")
-        setDialogOpen(false)
-        mutate()
-      } catch (err) {
-        setUploading(false)
-        toast.error(err instanceof Error ? err.message : "Gagal menambahkan kegiatan")
+      if (!namaKegiatan || !tahun) {
+        toast.error("Nama kegiatan dan tahun wajib diisi")
+        setSubmitting(false)
+        return
       }
-    })
+
+      let fotoUrl: string | null = null
+
+      if (fotoFile && fotoFile.size > 0) {
+        const uploadData = new FormData()
+        uploadData.append("file", fotoFile)
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: uploadData,
+        })
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.error || "Upload foto gagal")
+        }
+        const blob = await res.json()
+        fotoUrl = blob.url
+      }
+
+      const supabase = createClient()
+      const { error } = await supabase.from("portfolio").insert({
+        nama_kegiatan: namaKegiatan,
+        tahun,
+        deskripsi,
+        foto_url: fotoUrl,
+      })
+
+      if (error) throw error
+
+      toast.success("Kegiatan berhasil ditambahkan")
+      setDialogOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menambahkan kegiatan")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   async function handleDelete(item: PortfolioItem) {
@@ -154,7 +158,7 @@ export default function AdminPortfolioPage() {
             <DialogHeader>
               <DialogTitle>Tambah Kegiatan Baru</DialogTitle>
             </DialogHeader>
-            <form action={handleSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="nama_kegiatan">Nama Kegiatan</Label>
                 <Input
@@ -194,11 +198,11 @@ export default function AdminPortfolioPage() {
                   accept="image/*"
                 />
               </div>
-              <Button type="submit" disabled={isPending || uploading} className="gap-2">
-                {(isPending || uploading) && (
+              <Button type="submit" disabled={submitting} className="gap-2">
+                {submitting && (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
-                {uploading ? "Mengunggah..." : isPending ? "Menyimpan..." : "Simpan"}
+                {submitting ? "Menyimpan..." : "Simpan"}
               </Button>
             </form>
           </DialogContent>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import useSWR from "swr"
 import { Plus, Trash2, FileText, FolderOpen, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -67,48 +67,52 @@ const fetcher = async (): Promise<ArsipItem[]> => {
 export default function AdminArsipPage() {
   const { data: items, mutate, isLoading } = useSWR("admin-arsip", fetcher)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const [uploading, setUploading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(formData: FormData) {
-    startTransition(async () => {
-      try {
-        const file = formData.get("file") as File
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const form = e.currentTarget
+      const formData = new FormData(form)
+      const file = formData.get("file") as File
 
-        if (!file || file.size === 0) {
-          toast.error("Pilih file untuk diunggah")
-          return
-        }
-
-        setUploading(true)
-        const uploadData = new FormData()
-        uploadData.append("file", file)
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          body: uploadData,
-        })
-        if (!res.ok) throw new Error("Upload file gagal")
-        const blob = await res.json()
-        setUploading(false)
-
-        const supabase = createClient()
-        const { error } = await supabase.from("arsip_surat").insert({
-          nama_file: file.name,
-          file_url: blob.url,
-          ukuran_file: file.size,
-          tipe_file: file.type || "application/octet-stream",
-        })
-
-        if (error) throw error
-
-        toast.success("Arsip berhasil diunggah")
-        setDialogOpen(false)
-        mutate()
-      } catch (err) {
-        setUploading(false)
-        toast.error(err instanceof Error ? err.message : "Gagal mengunggah arsip")
+      if (!file || file.size === 0) {
+        toast.error("Pilih file untuk diunggah")
+        setSubmitting(false)
+        return
       }
-    })
+
+      const uploadData = new FormData()
+      uploadData.append("file", file)
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadData,
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || "Upload file gagal")
+      }
+      const blob = await res.json()
+
+      const supabase = createClient()
+      const { error } = await supabase.from("arsip_surat").insert({
+        nama_file: file.name,
+        file_url: blob.url,
+        ukuran_file: file.size,
+        tipe_file: file.type || "application/octet-stream",
+      })
+
+      if (error) throw error
+
+      toast.success("Arsip berhasil diunggah")
+      setDialogOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengunggah arsip")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   async function handleDelete(item: ArsipItem) {
@@ -158,7 +162,7 @@ export default function AdminArsipPage() {
             <DialogHeader>
               <DialogTitle>Unggah Arsip Baru</DialogTitle>
             </DialogHeader>
-            <form action={handleSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="file">Pilih File</Label>
                 <Input
@@ -172,11 +176,11 @@ export default function AdminArsipPage() {
                   Format: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, JPG, PNG
                 </p>
               </div>
-              <Button type="submit" disabled={isPending || uploading} className="gap-2">
-                {(isPending || uploading) && (
+              <Button type="submit" disabled={submitting} className="gap-2">
+                {submitting && (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
-                {uploading ? "Mengunggah..." : isPending ? "Menyimpan..." : "Unggah"}
+                {submitting ? "Mengunggah..." : "Unggah"}
               </Button>
             </form>
           </DialogContent>
